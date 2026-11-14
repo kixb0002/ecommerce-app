@@ -1,3 +1,4 @@
+# Rôle : CI : tests/audit, build, test du runtime, scan bloquant, ACR puis PR GitOps optionnelle ; aucun accès AKS.
 name: Test, scan, build and propose GitOps
 on:
   workflow_dispatch:
@@ -7,6 +8,7 @@ on:
 permissions:
   contents: read
 jobs:
+  # Aucune identité Azure nécessaire pour valider une PR, y compris depuis un fork.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -20,6 +22,7 @@ jobs:
       - run: python -m pip install -r requirements.txt pip-audit==2.10.1
       - run: python -m unittest discover -s tests -v
       - run: pip-audit -r requirements.txt
+  # OIDC est accordé à ce job uniquement ; la fédération Azure accepte main, pas les PR.
   build:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_BUILD == 'true'
     needs: test
@@ -55,6 +58,7 @@ jobs:
             -v "$PWD/tests:/app/tests:ro" --entrypoint python \
             "tmgitops237d8c7f.azurecr.io/ecommerce-api:$GITHUB_SHA" \
             -m unittest discover -s tests -v
+      # Le push dépend du succès du scan : aucune exception HIGH/CRITICAL, même sans correctif.
       - name: Scan OS and language dependencies
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
@@ -72,6 +76,7 @@ jobs:
           digest=$(az acr repository show --name tmgitops237d8c7f --image "ecommerce-api:$GITHUB_SHA" --query digest -o tsv)
           [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+  # Une GitHub App séparée doit proposer une PR ; elle ne déploie jamais directement sur AKS.
   promote:
     if: vars.ENABLE_GITOPS_PR == 'true'
     needs: build

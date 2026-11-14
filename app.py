@@ -2,7 +2,9 @@
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+# Limite la taille des corps JSON avant parsing pour contenir les entrées abusives.
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024
+# Catalogue de démonstration ; centimes entiers pour éviter les erreurs d’arrondi des flottants.
 PRODUCTS = {
     'keyboard': {'id': 'keyboard', 'name': 'Clavier', 'unit_price_cents': 4900},
     'mouse': {'id': 'mouse', 'name': 'Souris', 'unit_price_cents': 2500},
@@ -12,6 +14,7 @@ PRODUCTS = {
 
 @app.after_request
 def headers(response):
+    """Applique les en-têtes communs ; aucune réponse de devis ne doit être mise en cache."""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Cache-Control'] = 'no-store'
     return response
@@ -20,16 +23,20 @@ def headers(response):
 @app.get('/healthz')
 @app.get('/readyz')
 def health():
+    """Sondes Kubernetes : sans dépendance externe, disponibilité et vivacité ont le même résultat."""
     return jsonify(status='ok')
 
 
 @app.get('/api/products')
 def products():
+    """Retourne le catalogue public ; aucune lecture de base ou donnée client."""
     return jsonify(currency='EUR', products=list(PRODUCTS.values()))
 
 
 @app.post('/api/quotes')
 def quote():
+    """Valide le panier et calcule un devis non persisté, sans paiement ni réservation de stock."""
+    # silent=True transforme un JSON invalide en None, ensuite rejeté avec une réponse 400.
     payload = request.get_json(silent=True)
     items = payload.get('items') if isinstance(payload, dict) else None
     if not isinstance(items, list) or not 1 <= len(items) <= 50:
@@ -41,6 +48,7 @@ def quote():
         product_id, quantity = item.get('product_id'), item.get('quantity')
         if not isinstance(product_id, str) or product_id not in PRODUCTS:
             return jsonify(error='Produit inconnu'), 400
+        # bool hérite de int en Python : le type exact évite d’accepter True comme quantité 1.
         if type(quantity) is not int or not 1 <= quantity <= 99:
             return jsonify(error='quantity doit être un entier entre 1 et 99'), 400
         product = PRODUCTS[product_id]
@@ -48,5 +56,6 @@ def quote():
         lines.append(dict(product_id=product_id, quantity=quantity,
                           unit_price_cents=product['unit_price_cents'],
                           subtotal_cents=product['unit_price_cents'] * quantity))
+    # Le total provient des lignes recalculées côté serveur, jamais d’un montant client.
     return jsonify(currency='EUR', lines=lines,
                    total_cents=sum(line['subtotal_cents'] for line in lines))
