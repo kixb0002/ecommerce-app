@@ -31,7 +31,7 @@ Image initiale :
 Le workflow teste chaque PR. Sur main, il teste, audite, se connecte à Azure
 via OIDC, construit, scanne avec Trivy, pousse l'image scannée puis ouvre une
 PR GitOps **Dev seulement** avec son digest. Il ne possède aucun kubeconfig.
-Les actions sont figées par SHA. Les tests sont actifs ; build et promotion sont désactivés tant que leurs identités ne sont pas configurées.
+Les actions sont figées par SHA. Les tests et le build Azure sont actifs. La promotion GitOps reste désactivée.
 Le scan Python local ne constitue pas un scan de toutes les bibliothèques OS.
 
 Dépôt public : https://github.com/kixb0002/ecommerce-app.
@@ -51,3 +51,22 @@ Le service reste interne, sans authentification applicative ; utiliser des
 données de démonstration. Il ne s'agit pas d'une boutique complète prête à
 encaisser des paiements. La persistance, l'identité client, les taxes et le
 stock nécessitent une conception et des tests dédiés.
+
+## Résultat de la première CI Azure
+
+L’identité CI, sa fédération main et AcrPush sont créés par Terraform.
+Le contrôle Terraform après application ne détecte aucune différence.
+Run : https://github.com/kixb0002/ecommerce-app/actions/runs/43619252910
+
+Tests, audit pip, authentification Azure OIDC, connexion ACR et build : réussis.
+Scan Trivy : échoué, 49 résultats HIGH système et 5 HIGH Python ; zéro CRITICAL.
+Les résultats système incluent des vulnérabilités sans version corrigée indiquée
+par le scanner. Les résultats Python incluent msgpack, setuptools et urllib3
+hérités de la base/outillage, absents du fichier requirements applicatif.
+Le push et la promotion sont bloqués par ce scan ; aucun nouveau digest de ce
+run n’a été déployé. L’image initiale déjà en Dev n’est pas couverte par un
+scan réussi : son socle doit également être corrigé avant usage production.
+
+Suite : corriger les composants avec correctifs disponibles, réévaluer une base
+maintenue pour les autres résultats, puis relancer le scan complet. Le seuil
+HIGH/CRITICAL reste actif, y compris pour les vulnérabilités sans correctif.
